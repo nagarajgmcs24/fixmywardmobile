@@ -7,10 +7,11 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri } from 'expo-auth-session';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'http://localhost:3000';
 
 const FALLBACK_WARDS = [
   { ward_id: 1, ward_name: 'Ward 1 - Indiranagar' },
@@ -23,7 +24,6 @@ const FALLBACK_WARDS = [
   { ward_id: 8, ward_name: 'Ward 8 - Electronic City' },
 ];
 
-// ⚠️ Replace with your Google Client ID from console.cloud.google.com
 const GOOGLE_WEB_CLIENT_ID = '971430437174-kvj3d62nj5p0r43l1cvm60kk5kp3l3sm.apps.googleusercontent.com';
 
 const LoginScreen = ({ navigation }) => {
@@ -87,7 +87,7 @@ const LoginScreen = ({ navigation }) => {
   }, [response]);
 
   const navigateToDashboard = (role) => {
-    if (role === 'ward_member' || role === 'admin') {
+    if (role === 'ward_member' || role === 'councillor' || role === 'admin') {
       navigation.replace('CouncillorDash');
     } else {
       navigation.replace('CitizenDash');
@@ -103,46 +103,97 @@ const LoginScreen = ({ navigation }) => {
     setMockOtp('');
   };
 
-  const handlePasswordLogin = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert('Missing fields', 'Please enter your email and password.');
+  const handleDirectLogin = async () => {
+    if (!email.trim()) {
+      Alert.alert('Email Required', 'Please enter a valid email address.');
+      return;
+    }
+    if (!email.includes('@')) {
+      Alert.alert('Invalid Email', 'Email must contain @ symbol.');
+      return;
+    }
+    if (!password || !password.trim()) {
+      Alert.alert('Password Required', 'Please enter your password.');
+      return;
+    }
+    if (!phone.trim() || phone.length !== 10) {
+      Alert.alert('Valid Mobile Number Required', 'Please enter a valid 10-digit mobile number.');
       return;
     }
     if (selectedWardId == null) {
-      Alert.alert('Select ward', 'Please select your ward.');
-      return;
-    }
-    setPendingManualLogin(true);
-    setPhone('');
-    setOtp('');
-    setOtpSent(false);
-    setMockOtp('');
-  };
-
-  const handleSendOTP = async () => {
-    if (phone.length < 10) {
-      Alert.alert('Invalid Number', 'Please enter a valid 10-digit mobile number.');
+      Alert.alert('Ward Required', 'Please select your ward from the dropdown.');
       return;
     }
     setLoading(true);
     try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          phone: phone.trim(),
+          ward_id: selectedWardId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        await AsyncStorage.setItem('token', data.token);
+        if (data.user) await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        navigateToDashboard(data.user?.role || 'citizen');
+      } else {
+        Alert.alert('Login Failed', data.message || 'Invalid credentials');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Login failed. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendOTP = async () => {
+    if (!phone.trim()) {
+      Alert.alert('Mobile Number Required', 'Please enter your mobile number.');
+      return;
+    }
+    if (phone.length !== 10) {
+      Alert.alert('Invalid Mobile Number', 'Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    setLoading(true);
+    try {
+      console.log('Sending OTP for phone:', phone);
       const res = await fetch(`${BACKEND_URL}/api/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
       });
       const data = await res.json();
-      if (data.otp) setMockOtp(data.otp);
-      setOtpSent(true);
-    } catch {
-      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+      console.log('Send OTP Response:', { status: res.status, data });
+      if (data.otp) {
+        console.log('✅ OTP Received:', data.otp);
+        setMockOtp(data.otp);
+        setOtpSent(true);
+      } else {
+        Alert.alert('Error', data.message || 'Failed to send OTP');
+      }
+    } catch (error) {
+      console.error('❌ Send OTP Error:', error.message);
+      Alert.alert('Error', 'Failed to send OTP: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyOTP = async () => {
-    if (!otp || otp.length < 6) return;
+    if (!otp || otp.trim() === '') {
+      Alert.alert('OTP Required', 'Please enter the 6-digit OTP sent to your phone.');
+      return;
+    }
+    if (otp.length !== 6) {
+      Alert.alert('Invalid OTP', 'OTP must be exactly 6 digits.');
+      return;
+    }
     setLoading(true);
     try {
       const body = { phone, otp };
@@ -150,30 +201,39 @@ const LoginScreen = ({ navigation }) => {
         body.google_id = pendingGoogle.google_id;
         body.email = pendingGoogle.email;
         body.name = pendingGoogle.name;
+        console.log('Verifying Google OTP:', { phone, google_id: pendingGoogle.google_id });
       } else if (pendingManualLogin) {
         body.email = email.trim();
         body.password = password;
       }
+      
+      console.log('OTP Verification Request:', body);
       const res = await fetch(`${BACKEND_URL}/api/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      
       const data = await res.json();
-      if (data.token) {
-        navigateToDashboard(data.user.role);
+      console.log('OTP Response Status:', res.status);
+      console.log('OTP Response Data:', data);
+      
+      if (res.ok && data.token) {
+        console.log('✅ Login successful! Token received');
+        await AsyncStorage.setItem('token', data.token);
+        if (data.user) await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        console.log('Navigating to dashboard with role:', data.user?.role || 'citizen');
+        navigateToDashboard(data.user?.role || 'citizen');
       } else {
+        console.error('❌ OTP Verification Failed:', data.message);
         Alert.alert('Error', data.message || 'Verification failed');
       }
-    } catch {
-      Alert.alert('Error', 'Verification failed. Please check your connection.');
+    } catch (error) {
+      console.error('❌ OTP Verification Exception:', error.message);
+      Alert.alert('Error', 'Verification failed: ' + error.message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleApple = () => {
-    Alert.alert('Apple Sign-In', 'Apple Sign-In requires an Apple Developer account. Contact the admin to enable it.');
   };
 
   const selectedWardLabel = selectedWardId != null
@@ -201,6 +261,7 @@ const LoginScreen = ({ navigation }) => {
             <Text style={styles.title}>{title}</Text>
             <Text style={styles.subtitle}>{subtitle}</Text>
 
+            {/* ── Step 1: Email + Password + Phone + Ward ── */}
             {!isStepTwo && !otpSent ? (
               <>
                 <View style={styles.inputWrapper}>
@@ -230,6 +291,22 @@ const LoginScreen = ({ navigation }) => {
                 </View>
 
                 <View style={styles.inputWrapper}>
+                  <Text style={styles.inputLabel}>Mobile Number</Text>
+                  <View style={styles.phoneRow}>
+                    <View style={styles.countryCode}><Text style={styles.countryCodeText}>+91</Text></View>
+                    <TextInput
+                      style={styles.phoneInput}
+                      placeholder="9876543210"
+                      placeholderTextColor="#aaa"
+                      keyboardType="phone-pad"
+                      value={phone}
+                      onChangeText={setPhone}
+                      maxLength={10}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputWrapper}>
                   <Text style={styles.inputLabel}>Ward</Text>
                   <TouchableOpacity
                     style={styles.wardSelect}
@@ -243,7 +320,7 @@ const LoginScreen = ({ navigation }) => {
                   </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity style={styles.primaryBtn} onPress={handlePasswordLogin} disabled={loading}>
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleDirectLogin} disabled={loading}>
                   {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Sign In →</Text>}
                 </TouchableOpacity>
 
@@ -259,10 +336,6 @@ const LoginScreen = ({ navigation }) => {
                   <Text style={styles.googleBtnText}>🇬 Continue with Google</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.appleBtn} onPress={handleApple}>
-                  <Text style={styles.appleBtnText}> Continue with Apple</Text>
-                </TouchableOpacity>
-
                 <View style={styles.registerRow}>
                   <Text style={styles.registerText}>New to FixMyWard? </Text>
                   <TouchableOpacity onPress={() => navigation.navigate('Register')}>
@@ -272,6 +345,7 @@ const LoginScreen = ({ navigation }) => {
               </>
             ) : null}
 
+            {/* ── Step 2: Phone for Google flow ── */}
             {isStepTwo && !otpSent ? (
               <>
                 <View style={styles.inputWrapper}>
@@ -300,6 +374,7 @@ const LoginScreen = ({ navigation }) => {
               </>
             ) : null}
 
+            {/* ── Step 3: OTP ── */}
             {otpSent ? (
               <>
                 {mockOtp ? (
@@ -348,6 +423,7 @@ const LoginScreen = ({ navigation }) => {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Ward Modal */}
       <Modal visible={wardModalVisible} transparent animationType="fade" onRequestClose={() => setWardModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setWardModalVisible(false)}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
@@ -387,24 +463,8 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, color: '#888', marginBottom: 28 },
   inputWrapper: { marginBottom: 18 },
   inputLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 8 },
-  textInput: {
-    borderWidth: 1.5,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: '#333',
-  },
-  wardSelect: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1.5,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
+  textInput: { borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 12, padding: 14, fontSize: 16, color: '#333' },
+  wardSelect: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14 },
   wardSelectText: { fontSize: 16, color: '#333', flex: 1 },
   wardSelectPlaceholder: { fontSize: 16, color: '#aaa', flex: 1 },
   wardChevron: { fontSize: 12, color: '#888', marginLeft: 8 },
@@ -424,23 +484,11 @@ const styles = StyleSheet.create({
   divText: { marginHorizontal: 12, color: '#aaa', fontSize: 13 },
   googleBtn: { borderWidth: 1.5, borderColor: '#ddd', padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
   googleBtnText: { fontSize: 15, color: '#444', fontWeight: '600' },
-  appleBtn: { backgroundColor: '#000', padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 20 },
-  appleBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   registerRow: { flexDirection: 'row', justifyContent: 'center' },
   registerText: { color: '#888', fontSize: 14 },
   registerLink: { color: '#4A90E2', fontSize: 14, fontWeight: 'bold' },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    maxHeight: '70%',
-    paddingBottom: 12,
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 24 },
+  modalCard: { backgroundColor: '#fff', borderRadius: 16, maxHeight: '70%', paddingBottom: 12 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#1a1a2e', padding: 16, paddingBottom: 8 },
   modalList: { maxHeight: 320 },
   modalRow: { paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },

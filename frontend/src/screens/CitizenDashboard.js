@@ -1,22 +1,38 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
   SafeAreaView, FlatList, ActivityIndicator, RefreshControl, Platform 
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const BACKEND_URL = 'http://localhost:3000';
 
 const CitizenDashboard = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('Citizen');
-  const [complaints, setComplaints] = useState([
-    { id: '1', title: 'Street Light Not Working', status: 'Pending', date: '28 Mar 2026', category: 'Electricity' },
-    { id: '2', title: 'Pothole on Main Road', status: 'In Progress', date: '27 Mar 2026', category: 'Roads' },
-  ]);
+  const [complaints, setComplaints] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     loadUserData();
-    fetchComplaints();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchComplaints();
+      fetchNotifications();
+    }, [])
+  );
+
+  // Polling for real-time updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchComplaints();
+      fetchNotifications();
+    }, 10000); // 10 seconds
+    return () => clearInterval(interval);
   }, []);
 
   const loadUserData = async () => {
@@ -40,7 +56,7 @@ const CitizenDashboard = ({ navigation }) => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/complaints', {
+      const response = await fetch(`${BACKEND_URL}/api/complaints`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -55,6 +71,22 @@ const CitizenDashboard = ({ navigation }) => {
     }
   };
 
+  const fetchNotifications = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const response = await fetch(`${BACKEND_URL}/api/notifications`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        const unread = data.notifications.filter(n => !n.read).length;
+        setUnreadCount(unread);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchComplaints();
@@ -66,18 +98,18 @@ const CitizenDashboard = ({ navigation }) => {
       onPress={() => navigation.navigate('ComplaintDetails', { id: item._id, complaint: item })}
     >
       <View style={styles.cardHeader}>
-        <View>
+        <View style={{ flex: 1, marginRight: 8 }}>
           <Text style={styles.cardCategory}>{item.category || 'General'}</Text>
           <Text style={styles.cardTitle}>{item.title}</Text>
         </View>
         <View style={[styles.statusBadge, getStatusStyle(item.status)]}>
           <Text style={[styles.statusText, getStatusTextStyle(item.status)]}>
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1).replace('_', ' ')}
+            {(item.status || 'pending').charAt(0).toUpperCase() + (item.status || 'pending').slice(1).replace('_', ' ')}
           </Text>
         </View>
       </View>
       <View style={styles.cardFooter}>
-        <Text style={styles.cardDate}>📅 {new Date(item.created_at).toLocaleDateString()}</Text>
+        <Text style={styles.cardDate}>📅 {item.created_at ? new Date(item.created_at).toLocaleDateString() : (item.date || '')}</Text>
         <Text style={styles.viewLink}>Details →</Text>
       </View>
     </TouchableOpacity>
@@ -122,6 +154,7 @@ const CitizenDashboard = ({ navigation }) => {
               onPress={() => navigation.navigate('Notifications')}
             >
               <Text style={styles.headerIcon}>🔔</Text>
+              {unreadCount > 0 && <View style={styles.badge} />}
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.headerBtn}
@@ -139,13 +172,13 @@ const CitizenDashboard = ({ navigation }) => {
           </View>
           <View style={[styles.statCard, { backgroundColor: '#4CAF50' }]}>
             <Text style={styles.statNum}>
-              {complaints.filter(c => c.status.toLowerCase() === 'resolved').length}
+              {complaints.filter(c => (c.status || '').toLowerCase() === 'resolved').length}
             </Text>
             <Text style={styles.statLabel}>Resolved</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: '#FF9800' }]}>
             <Text style={styles.statNum}>
-              {complaints.filter(c => c.status.toLowerCase() === 'pending').length}
+              {complaints.filter(c => (c.status || '').toLowerCase() === 'pending').length}
             </Text>
             <Text style={styles.statLabel}>Pending</Text>
           </View>
@@ -168,14 +201,13 @@ const CitizenDashboard = ({ navigation }) => {
               <Text style={styles.seeAll}>See All</Text>
             </TouchableOpacity>
           </View>
-
           {loading ? (
             <ActivityIndicator size="large" color="#4A90E2" style={{ marginTop: 20 }} />
           ) : (
             <FlatList
               data={complaints.slice(0, 3)}
               renderItem={renderItem}
-              keyExtractor={item => item._id}
+              keyExtractor={item => String(item._id || item.id || Math.random())}
               scrollEnabled={false}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
@@ -202,7 +234,7 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: '#F8F9FE',
     ...Platform.select({
-      web: { height: '100vh', overflow: 'hidden' },
+      web: { height: '100vh', maxHeight: '100vh', overflow: 'hidden' },
       default: {}
     })
   },
@@ -236,6 +268,17 @@ const styles = StyleSheet.create({
     marginLeft: 12
   },
   headerIcon: { fontSize: 20 },
+  badge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
   statsRow: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
@@ -306,7 +349,7 @@ const styles = StyleSheet.create({
   },
   fabIcon: { fontSize: 24 },
   emptyState: { alignItems: 'center', marginTop: 40 },
-  emptyText: { color: '#94A3B8', textAlign: 'center' }
+  emptyText: { color: '#94A3B8', textAlign: 'center' },
 });
 
 export default CitizenDashboard;

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'http://localhost:3000';
 
 const ProfileScreen = ({ navigation }) => {
   const [user, setUser] = useState(null);
@@ -131,24 +131,6 @@ const ProfileScreen = ({ navigation }) => {
     }
   };
 
-  const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
-          style: 'destructive',
-          onPress: async () => {
-            await AsyncStorage.removeItem('token');
-            navigation.replace('Login');
-          }
-        }
-      ]
-    );
-  };
-
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -223,10 +205,6 @@ const ProfileScreen = ({ navigation }) => {
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <Text style={styles.logoutBtnText}>Logout</Text>
-        </TouchableOpacity>
 
         <Text style={styles.versionText}>FixMyWard v1.0.0</Text>
       </ScrollView>
@@ -495,18 +473,6 @@ const styles = StyleSheet.create({
   chevron: {
     fontSize: 24,
     color: '#94a3b8'
-  },
-  logoutBtn: {
-    backgroundColor: '#fee2e2',
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginBottom: 12
-  },
-  logoutBtnText: {
-    color: '#ef4444',
-    fontWeight: 'bold',
-    fontSize: 16
   },
   versionText: {
     textAlign: 'center',

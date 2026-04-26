@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'http://localhost:3000';
 
 const CATEGORIES = [
   { id: '1', name: 'Garbage', icon: '🗑️' },
@@ -16,10 +16,22 @@ const CATEGORIES = [
   { id: '6', name: 'Other', icon: '🛠️' },
 ];
 
+const WARDS = [
+  { id: '1', name: 'Ward 1 - Indiranagar' },
+  { id: '2', name: 'Ward 2 - Malleshwaram' },
+  { id: '3', name: 'Ward 3 - Jayanagar' },
+  { id: '4', name: 'Ward 4 - Koramangala' },
+  { id: '5', name: 'Ward 5 - Whitefield' },
+  { id: '6', name: 'Ward 6 - HSR Layout' },
+  { id: '7', name: 'Ward 7 - Rajajinagar' },
+  { id: '8', name: 'Ward 8 - Electronic City' },
+];
+
 const ReportIssueScreen = ({ navigation }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState(null);
+  const [ward, setWard] = useState(null);
   const [image, setImage] = useState(null);
   const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -41,7 +53,35 @@ const ReportIssueScreen = ({ navigation }) => {
         setLocation(loc.coords);
       })();
     }
+    fetchUserProfile();
   }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (token) {
+        const response = await fetch(`${BACKEND_URL}/api/auth/profile`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (response.ok && data.user && data.user.ward_id) {
+          const userWard = WARDS.find(w => w.id === data.user.ward_id);
+          if (userWard) {
+            setWard(userWard);
+          } else {
+            // Fallback if ward_id is set but not in our list
+            setWard(WARDS[0]);
+          }
+        } else {
+          // Default to Ward 1 if no ward_id is set for user
+          setWard(WARDS[0]);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      setWard(WARDS[0]); // Fallback
+    }
+  };
 
   const pickImage = async () => {
     if (Platform.OS === 'web') {
@@ -69,36 +109,60 @@ const ReportIssueScreen = ({ navigation }) => {
   };
 
   const handleSubmit = async () => {
-    if (!title || !category || !description || !image) {
-      Alert.alert('Error', 'Please fill in all mandatory fields.');
+    if (!title || !category || !description || !image || !ward) {
+      Alert.alert('Error', 'Please fill in all mandatory fields including the ward.');
       return;
     }
 
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('token');
+      const ward_id = ward.id;
+
       if (!token) {
         Alert.alert('Error', 'Session expired. Please log in again.');
         navigation.navigate('Login');
         return;
       }
 
-      // In a real app, you would upload the image to S3/Cloudinary first
-      // For this demo, we'll send the base64 or URI as image_url
+      // Prepare FormData for file upload
+      const formData = new FormData();
+      formData.append('ward_id', ward_id);
+      formData.append('title', title);
+      formData.append('category', category.name);
+      formData.append('description', description);
+      formData.append('location', JSON.stringify(location));
+
+      if (image) {
+        if (Platform.OS === 'web') {
+          // Convert base64 to blob if needed, but if it's already a blob/file it's better
+          // For now, if it's base64 (starts with data:), convert it
+          if (image.startsWith('data:')) {
+            const response = await fetch(image);
+            const blob = await response.blob();
+            formData.append('image', blob, 'complaint.jpg');
+          } else {
+            formData.append('image', image);
+          }
+        } else {
+          // React Native FormData
+          const uriParts = image.split('.');
+          const fileType = uriParts[uriParts.length - 1];
+          formData.append('image', {
+            uri: image,
+            name: `photo.${fileType}`,
+            type: `image/${fileType}`,
+          });
+        }
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/complaints`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
+          // Note: Do NOT set Content-Type for FormData, browser/fetch will set it with boundary
         },
-        body: JSON.stringify({
-          ward_id: "8", // Default for demo, should come from user profile
-          title,
-          category: category.name,
-          description,
-          image_url: image, 
-          location
-        }),
+        body: formData,
       });
 
       const data = await response.json();
@@ -176,6 +240,8 @@ const ReportIssueScreen = ({ navigation }) => {
             onChangeText={setDescription}
           />
         </View>
+
+
 
         <Text style={styles.label}>Photo Proof</Text>
         <TouchableOpacity style={styles.imagePlaceholder} onPress={pickImage}>
@@ -336,7 +402,36 @@ const styles = StyleSheet.create({
     elevation: 6
   },
   submitBtnDisabled: { backgroundColor: '#ccc' },
-  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  wardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  wardItem: {
+    width: '48%',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  wardItemSelected: {
+    backgroundColor: '#4A90E2',
+    borderColor: '#4A90E2',
+  },
+  wardText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  wardTextSelected: {
+    color: '#fff',
+  },
 });
 
 export default ReportIssueScreen;

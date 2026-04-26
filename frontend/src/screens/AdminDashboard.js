@@ -17,14 +17,14 @@ const AdminDashboard = ({ navigation }) => {
       const token = await AsyncStorage.getItem('token');
       
       // Fetch stats
-      const statsRes = await fetch('http://localhost:5000/api/admin/stats', {
+      const statsRes = await fetch('http://localhost:3000/api/admin/stats', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const statsData = await statsRes.json();
       if (statsRes.ok) setStats(statsData);
 
       // Fetch all users to find pending councillors (simplified for demo)
-      const usersRes = await fetch('http://localhost:5000/api/admin/users', {
+      const usersRes = await fetch('http://localhost:3000/api/admin/users', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const usersData = await usersRes.json();
@@ -49,7 +49,7 @@ const AdminDashboard = ({ navigation }) => {
     try {
       const token = await AsyncStorage.getItem('token');
       // Assign to a default ward for demo
-      const response = await fetch(`http://localhost:5000/api/admin/users/${id}/role`, {
+      const response = await fetch(`http://localhost:3000/api/admin/users/${id}/role`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -69,7 +69,7 @@ const AdminDashboard = ({ navigation }) => {
   const goToMap = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/complaints', {
+      const response = await fetch('http://localhost:3000/api/complaints', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -139,9 +139,6 @@ const AdminDashboard = ({ navigation }) => {
           ListEmptyComponent={<Text style={styles.emptyText}>No pending verifications.</Text>}
         />
 
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.replace('Login')}>
-          <Text style={styles.backButtonText}>Logout</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -168,9 +165,7 @@ const styles = StyleSheet.create({
   cardEmail: { fontSize: 12, color: '#999' },
   verifyButton: { backgroundColor: '#4CAF50', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
   verifyText: { color: '#fff', fontWeight: 'bold' },
-  emptyText: { textAlign: 'center', marginTop: 20, color: '#999' },
-  backButton: { margin: 20, padding: 15, backgroundColor: '#eee', borderRadius: 10, alignItems: 'center' },
-  backButtonText: { color: '#333', fontWeight: 'bold' }
+  emptyText: { textAlign: 'center', marginTop: 20, color: '#999' }
 });
 
 export default AdminDashboard;

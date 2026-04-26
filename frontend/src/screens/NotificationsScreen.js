@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, FlatList, TouchableOpacity,
-  SafeAreaView, ActivityIndicator, RefreshControl, Platform
+  SafeAreaView, ActivityIndicator, RefreshControl, Platform, Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'http://localhost:3000';
 
 const NotificationsScreen = ({ navigation }) => {
   const [notifications, setNotifications] = useState([]);
@@ -56,10 +56,37 @@ const NotificationsScreen = ({ navigation }) => {
     fetchNotifications();
   };
 
+  const handleNotificationClick = async (notification) => {
+    markAsRead(notification._id);
+    if (notification.complaint_id) {
+      try {
+        setLoading(true);
+        const token = await AsyncStorage.getItem('token');
+        const response = await fetch(`${BACKEND_URL}/api/complaints?id=${notification.complaint_id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (response.ok && data.complaints && data.complaints.length > 0) {
+          // Find the specific complaint
+          const complaint = data.complaints.find(c => c._id === notification.complaint_id);
+          if (complaint) {
+            navigation.navigate('ComplaintDetails', { complaint });
+          } else {
+            Alert.alert('Error', 'Complaint no longer exists.');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching complaint details:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   const renderItem = ({ item }) => (
     <TouchableOpacity 
       style={[styles.notificationCard, !item.read && styles.unreadCard]}
-      onPress={() => markAsRead(item._id)}
+      onPress={() => handleNotificationClick(item)}
     >
       <View style={styles.iconContainer}>
         <Text style={styles.icon}>{item.read ? '🔔' : '🔵'}</Text>

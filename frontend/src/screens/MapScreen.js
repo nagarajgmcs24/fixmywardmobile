@@ -7,6 +7,26 @@ const MapScreen = ({ route, navigation }) => {
   const getLat = (c) => c?.location?.latitude || c?.latitude || 12.9716;
   const getLng = (c) => c?.location?.longitude || c?.longitude || 77.5946;
 
+  const getPinColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'pending': return 'orange';
+      case 'in_progress': return 'blue';
+      case 'resolved': return 'green';
+      case 'rejected': return 'red';
+      default: return 'gray';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'pending': return '#FF9800';
+      case 'in_progress': return '#2196F3';
+      case 'resolved': return '#4CAF50';
+      case 'rejected': return '#F44336';
+      default: return '#9E9E9E';
+    }
+  };
+
   const [selectedLocation, setSelectedLocation] = useState(
     complaints.length > 0 
       ? { lat: getLat(complaints[0]), lng: getLng(complaints[0]) }
@@ -95,6 +115,7 @@ const MapScreen = ({ route, navigation }) => {
             coordinate={{ latitude: getLat(c), longitude: getLng(c) }}
             title={c.title}
             description={c.status}
+            pinColor={getPinColor(c.status)}
           />
         ))}
       </MapView>
